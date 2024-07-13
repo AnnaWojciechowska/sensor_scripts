@@ -10,11 +10,11 @@
 #  fields: 'pressure_mbar' (unit mBars), 'temp_c' (unit degrees Celcius )
   
 # TAGS
-# +---------+--------+--------------+
-# |tag name | place  | sensor_model |
-# +---------+--------+--------------+
-# | type    | string | int          |
-# +---------+--------+--------------+
+# +---------+--------+--------------+--------------+
+# |tag name | place  | sensor_model | sensor_name  |
+# +---------+--------+--------------+--------------+
+# | type    | string | int          | string       |
+# +---------+--------+--------------+--------------+
 #sensor model is currently set to 0, place is not yet used, to be added in the future
 
 # FIELDS
@@ -51,6 +51,7 @@ from datetime import datetime as dt
 
 
 def set_up_log(log_dir, log_filename):
+    # to do create log when does not exist even if folder exists
     ''' creates a log in script running directory '''
     script_run_dir = os.getcwd()
     for handler in logging.root.handlers[:]:
@@ -76,30 +77,33 @@ def get_script_name():
 def get_sensor_name(file_path):
     try:
         with open(file_path, 'r') as file:
-            sensor_name = ''
+            sensor_string = ''
             while True:
                 char = file.read(1)
                 if not char or char == ',':
                     break
-                sensor_name += char
+                sensor_string += char
     except:
         LOGGER.error(f"Could not open {file_path}")
         return None
-    if sensor_name == 'Default mission information for csv file header':
-        sensor_name = 'not_named'
-    return sensor_name
+    if sensor_string == 'Default mission information for csv file header':
+        return "not_set", "not_named"
+    else:
+        res = sensor_string.split(' ')
+        return res[0], res[1]
 
 def wirte_csv_to_influx(file_path, write_run): 
     ''' reads from csv at file_path and stores to influx '''
     ''' returns true if writen, together with datapoints count'''
     if os.stat(file_path).st_size > 0:
-        sensor_name = get_sensor_name(file_path)
-        if sensor_name == None:
+        sensor_meta_data = get_sensor_name(file_path)
+        if sensor_meta_data == None:
             # return False, since not written, and 0 datapoints
             return (False ,0)
         df = pd.read_csv(file_path, skiprows=1) 
         if df.shape[0] > 0:
-            df['sensor_model'] = 0
+            df['sensor_position'] = sensor_meta_data[0]
+            df['sensor_model'] = sensor_meta_data[1]
             df['frac_string'] = df['frac.seconds'].apply(lambda x: str(x))
             df['dt_string'] = df['DateTime'].apply(lambda x: str(x))
             df['time'] = pd.to_datetime( df['dt_string'] + '.' + df['frac_string'])
@@ -109,8 +113,9 @@ def wirte_csv_to_influx(file_path, write_run):
             #tutaj add exceptions?
             if write_run:
                 try:
-                    result = INFLUX_WRITE_CLIENT.write_points(df,'pressure',tag_columns = ['sensor_model'], field_columns = ['pressure_mbar', 'temp_c'],protocol='line')
+                    result = INFLUX_WRITE_CLIENT.write_points(df,'pressure',tag_columns = ['sensor_model', 'sensor_position'], field_columns = ['pressure_mbar', 'temp_c'],protocol='line')
                     if result:
+                        LOGGER.info(f"data points written: {df.shape[0]}")
                         return (result,df.shape[0])
                 except ConnectionError:
                     # thrown if influxdb is down or (spelling) errors in connection configuration
