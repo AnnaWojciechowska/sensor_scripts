@@ -74,7 +74,7 @@ def get_script_name():
     res = script_name.split('.py')
     return res[0]
 
-def get_sensor_name(file_path):
+def read_settings(file_path):
     try:
         with open(file_path, 'r') as file:
             sensor_string = ''
@@ -90,13 +90,24 @@ def get_sensor_name(file_path):
         return "not_set", "not_named"
     else:
         res = sensor_string.split(' ')
-        return res[0], res[1]
+        return res[0], res[1], res[2]
+
+def get_utc_time_offset(utc_string):
+    #reading utf time offset information
+    # tested against utc_string = ["UTC+0", "UTC-1", "UTC+2" , "utc-0"]
+    offset_list = utc_string.lower().split('utc')
+    offset_sign  = offset_list[1][0]
+    offset_val = offset_list[1][1:]
+    offset_int_val = int(offset_val)
+    if offset_sign == '-':
+        offset_int_val *= -1
+    return  offset_int_val
 
 def wirte_csv_to_influx(file_path, write_run): 
     ''' reads from csv at file_path and stores to influx '''
     ''' returns true if writen, together with datapoints count'''
     if os.stat(file_path).st_size > 0:
-        sensor_meta_data = get_sensor_name(file_path)
+        sensor_meta_data = read_settings(file_path)
         if sensor_meta_data == None:
             # return False, since not written, and 0 datapoints
             return (False ,0)
@@ -104,16 +115,20 @@ def wirte_csv_to_influx(file_path, write_run):
         if df.shape[0] > 0:
             df['sensor_position'] = sensor_meta_data[0]
             df['sensor_model'] = sensor_meta_data[1]
+            utc_time_offset = get_utc_time_offset(sensor_meta_data[2])
+            utc_offset_time_delta = pd.Timedelta(days=0, hours=utc_time_offset)
             df['frac_string'] = df['frac.seconds'].apply(lambda x: str(x))
             df['dt_string'] = df['DateTime'].apply(lambda x: str(x))
             df['time'] = pd.to_datetime( df['dt_string'] + '.' + df['frac_string'])
+            df['utc_offset'] = utc_time_offset
+            #inflxdb default time zone is UTC, thus all data will be stored in UTC+0
+            df['time'] = df['time'] - utc_offset_time_delta
             df = df.drop(columns=['dt_string', 'frac_string', 'POSIXt', 'DateTime', 'frac.seconds' ])
             df.set_index('time', inplace=True)
             df = df.rename(columns={"Pressure.mbar": "pressure_mbar", "TempC": "temp_c"})
-            #tutaj add exceptions?
             if write_run:
                 try:
-                    result = INFLUX_WRITE_CLIENT.write_points(df,'pressure',tag_columns = ['sensor_model', 'sensor_position'], field_columns = ['pressure_mbar', 'temp_c'],protocol='line')
+                    result = INFLUX_WRITE_CLIENT.write_points(df,'pressure',tag_columns = ['sensor_model', 'sensor_position'], field_columns = ['pressure_mbar', 'temp_c', 'utc_offset'],protocol='line')
                     if result:
                         LOGGER.info(f"data points written: {df.shape[0]}")
                         return (result,df.shape[0])
