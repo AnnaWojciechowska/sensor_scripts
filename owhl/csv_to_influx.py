@@ -74,23 +74,26 @@ def get_script_name():
     res = script_name.split('.py')
     return res[0]
 
-def read_settings(file_path):
+
+def read_settings_line(settings_line):
+    if settings_line == 'Default mission information for csv file header':
+        return "not_set", "not_named", "UTC+0"
+    res = settings_line.split(' ')
+    position = res[0]
+    model = res[1]
+    utc_shift = res[2].split(',')[0]
+    return position, model, utc_shift
+
+def get_metadata(file_path):
     try:
         with open(file_path, 'r') as file:
-            sensor_string = ''
-            while True:
-                char = file.read(1)
-                if not char or char == ',':
-                    break
-                sensor_string += char
-    except:
-        LOGGER.error(f"Could not open {file_path}")
-        return None
-    if sensor_string == 'Default mission information for csv file header':
-        return "not_set", "not_named"
-    else:
-        res = sensor_string.split(' ')
-        return res[0], res[1], res[2]
+            first_line = file.readline().strip()
+            return read_settings_line(first_line)
+    except FileNotFoundError:
+        print(f"The file {file_path} was not found.")
+    except IOError:
+        print(f"An error occurred trying to read the file {file_path}.")
+
 
 def get_utc_time_offset(utc_string):
     #reading utf time offset information
@@ -107,7 +110,7 @@ def wirte_csv_to_influx(file_path, write_run):
     ''' reads from csv at file_path and stores to influx '''
     ''' returns true if writen, together with datapoints count'''
     if os.stat(file_path).st_size > 0:
-        sensor_meta_data = read_settings(file_path)
+        sensor_meta_data = get_metadata(file_path)
         if sensor_meta_data == None:
             # return False, since not written, and 0 datapoints
             return (False ,0)
@@ -160,7 +163,7 @@ def process_csv(write_run):
     SCRIPT_DIR = os.getcwd()
     DATA_DIR = 'sensor_data'
     if not os.path.exists(os.path.join(SCRIPT_DIR, DATA_DIR)):
-        LOGGER.error("{} data folder is missng, aborting.".format(os.path.join(SCRIPT_DIR, DATA_DIR)))
+        LOGGER.error(f"{os.path.join(SCRIPT_DIR, DATA_DIR)} data folder is missng, aborting.")
         sys.exit(1)
 
     PROCESSED_DIR = 'sensor_processed'
@@ -171,15 +174,16 @@ def process_csv(write_run):
     files = glob.glob("*.csv")
     for f in files:
         start_processing = dt.now()
+        LOGGER.info(f"Trying to process: {f}")
         full_file_path = os.path.join(SCRIPT_DIR, DATA_DIR, f)
         write_res = wirte_csv_to_influx(full_file_path, write_run)
         if (write_run and write_res[0]):
             dest_file_path = os.path.join(SCRIPT_DIR, PROCESSED_DIR, f)
             os.rename(full_file_path, dest_file_path)
             end_processing = dt.now()
-            LOGGER.info("processed: {}".format(f))
-            LOGGER.info("processed {} datapoints in: {}".format(write_res[1], end_processing - start_processing))
-    LOGGER.info("total processed {} files".format(len(files)))
+            LOGGER.info(f"{f} processed")
+            LOGGER.info(f"processed {write_res[1]} datapoints in: { end_processing - start_processing} [ms]")
+    LOGGER.info(f"total processed {len(files)} files")
 
 
 START_SCRIPT_TIME = dt.now()
@@ -208,4 +212,4 @@ args = parser.parse_args()
 
 process_csv(not args.dry_run)
 
-LOGGER.info("end script script, duration: {}".format(dt.now() - START_SCRIPT_TIME))
+LOGGER.info(f"end script script, duration: {dt.now() - START_SCRIPT_TIME} [ms]")
