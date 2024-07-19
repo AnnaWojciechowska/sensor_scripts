@@ -88,12 +88,12 @@ def get_metadata(file_path):
     try:
         with open(file_path, 'r') as file:
             first_line = file.readline().strip()
+            LOGGER.info(f"Processing {file_path}.")
             return read_settings_line(first_line)
     except FileNotFoundError:
-        print(f"The file {file_path} was not found.")
+        LOGGER.errof(f" {file_path} was not found.")
     except IOError:
-        print(f"An error occurred trying to read the file {file_path}.")
-
+        LOGGER.errof(f"An io error occurred trying to read the file {file_path}.")
 
 def get_utc_time_offset(utc_string):
     #reading utf time offset information
@@ -106,7 +106,59 @@ def get_utc_time_offset(utc_string):
         offset_int_val *= -1
     return  offset_int_val
 
-def wirte_csv_to_influx(file_path, write_run): 
+def store_points(df):
+    try:
+        result = INFLUX_WRITE_CLIENT.write_points(df,'pressure',tag_columns = ['sensor_model', 'sensor_position'], field_columns = ['pressure_mbar', 'temp_c', 'utc_offset'],protocol='line')
+        if result:
+            LOGGER.info(f" {df.shape[0]} data points written.")
+            return (result,df.shape[0])
+        else: 
+            LOGGER.error(f"No data written.")
+            return (result,0)
+    except ConnectionError:
+            # thrown if influxdb is down or (spelling) errors in connection configuration
+            LOGGER.error("ConnectionError, check connection setting and if influxdb is up: 'systemctl status influxdb'.")
+            LOGGER.error(traceback.format_exc())
+            sys.exit(1)
+    except Timeout:
+            LOGGER.error("Timeout, check influx timeout setting and network connection.")
+            LOGGER.error(traceback.format_exc())
+    except InfluxDBClientError:
+            LOGGER.error("InfluxDBClientError, check if database exist in influx: 'SHOW DATABASES'.")
+            LOGGER.error(traceback.format_exc())
+            sys.exit(1)
+    except InfluxDBServerError:
+            LOGGER.error("InfluxDBServerError")
+            LOGGER.error(traceback.format_exc())
+            sys.exit(1)
+
+# influx cannot handle large data frame to be written in one go - it would generte excepton
+# influxdb.exceptions.InfluxDBClientError: 413: {"error":"Request Entity Too Large"}
+# hence data needs to be sliced to hourly chunks: 24 hour dataframe from single file will be sliced to 24 hourly chunks
+def slice_data_and_store(df):
+    # the stored time is from start_timestap to df.time.max()
+    start_timestamp = df.time.min()
+    time_range = df.time.max() -  start_timestamp
+    start_timestamp_pd_type = pd.Timestamp(year=start_timestamp.year, month=start_timestamp.month, day=start_timestamp.day, hour=start_timestamp.hour, minute=0)
+    hours = round(time_range.seconds/3600)
+
+    file_datapoints_count = 0
+    for i in range (0,hours+1):
+        
+        lower_limit = start_timestamp_pd_type +  pd.Timedelta(i, "h")
+        upper_limit = start_timestamp_pd_type +  pd.Timedelta(i+1, "h")
+        # select slice of data for given hour
+        df_hour = df[(df.time >= lower_limit) & (df.time < upper_limit)]
+        df_hour.set_index('time', inplace=True)
+        res = store_points(df_hour)
+        LOGGER.info(f"Processed chunk of {res[1]} datapoints.")
+        file_datapoints_count += res[1]
+    LOGGER.info(f"Processed total of {file_datapoints_count} datapoints from a file.")
+    return res
+
+
+
+def proces_csv_and_store(file_path, write_run): 
     ''' reads from csv at file_path and stores to influx '''
     ''' returns true if writen, together with datapoints count'''
     if os.stat(file_path).st_size > 0:
@@ -127,38 +179,19 @@ def wirte_csv_to_influx(file_path, write_run):
             #inflxdb default time zone is UTC, thus all data will be stored in UTC+0
             df['time'] = df['time'] - utc_offset_time_delta
             df = df.drop(columns=['dt_string', 'frac_string', 'POSIXt', 'DateTime', 'frac.seconds' ])
-            df.set_index('time', inplace=True)
             df = df.rename(columns={"Pressure.mbar": "pressure_mbar", "TempC": "temp_c"})
             if write_run:
-                try:
-                    result = INFLUX_WRITE_CLIENT.write_points(df,'pressure',tag_columns = ['sensor_model', 'sensor_position'], field_columns = ['pressure_mbar', 'temp_c', 'utc_offset'],protocol='line')
-                    if result:
-                        LOGGER.info(f"data points written: {df.shape[0]}")
-                        return (result,df.shape[0])
-                except ConnectionError:
-                    # thrown if influxdb is down or (spelling) errors in connection configuration
-                    LOGGER.error("ConnectionError, check connection setting and if influxdb is up: 'systemctl status influxdb'")
-                    LOGGER.error(traceback.format_exc())
-                    sys.exit(1)
-                except Timeout:
-                    LOGGER.error("Timeout, check influx timeout setting and network connection")
-                    LOGGER.error(traceback.format_exc())
-                except InfluxDBClientError:
-                    LOGGER.error("InfluxDBClientError, check if database exist in influx: 'SHOW DATABASES'")
-                    LOGGER.error(traceback.format_exc())
-                    sys.exit(1)
-                except InfluxDBServerError:
-                    LOGGER.error("InfluxDBServerError")
-                    LOGGER.error(traceback.format_exc())
-                    sys.exit(1)
+                return slice_data_and_store(df)
         else: 
             # no datapoints
             return (False,0)
     else: 
         #file is 0 size:
         return (False,0)
+
+
            
-def process_csv(write_run):
+def process_data(write_run):
     ''' reads all csv from DATA_DIR, after successful writing they are moved to PROCESSED_DIR '''
     SCRIPT_DIR = os.getcwd()
     DATA_DIR = 'sensor_data'
@@ -176,7 +209,7 @@ def process_csv(write_run):
         start_processing = dt.now()
         LOGGER.info(f"Trying to process: {f}")
         full_file_path = os.path.join(SCRIPT_DIR, DATA_DIR, f)
-        write_res = wirte_csv_to_influx(full_file_path, write_run)
+        write_res = proces_csv_and_store(full_file_path, write_run)
         if (write_run and write_res[0]):
             dest_file_path = os.path.join(SCRIPT_DIR, PROCESSED_DIR, f)
             os.rename(full_file_path, dest_file_path)
@@ -210,6 +243,6 @@ parser.add_argument('-d', '--dry-run', action='store_true',
     help="does not write to database, just show result in csv file")
 args = parser.parse_args()
 
-process_csv(not args.dry_run)
+process_data(not args.dry_run)
 
 LOGGER.info(f"end script script, duration: {dt.now() - START_SCRIPT_TIME} [ms]")
