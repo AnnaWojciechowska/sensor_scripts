@@ -1,0 +1,5 @@
+location_name,code,lat_deg,lon_deg,max_depth_m,sensor_depth_m,water_type_m
+Sjølyst Marina, SJO,59.918878, 10.674710, 3, 2, fjord 
+Saltstein, SAL, 58.965074, 9.850838,0, 0, sea
+Baleal, BAL, 39.5438889, -9.41, 0,0, ocean 
+Peniche Fishing Port, PEN, 39.353452,-9.372495, 0, 0, ocean
