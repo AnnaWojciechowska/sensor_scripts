@@ -1,0 +1,4 @@
+handle empty files such as:
+SALTSTEIN_E sensor_05.07.2024 UTC+2,startMinute,0,minutes per hour,60
+POSIXt,DateTime,frac.seconds,Pressure.mbar,TempC
+
