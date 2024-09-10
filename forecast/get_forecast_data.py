@@ -1,7 +1,10 @@
 #Anna Wojciechowska, Oslo August 2024
 # script to download wave forecast file from met.no threads server
 import requests
+
+import pytz
 from datetime import datetime as dt
+from datetime import timedelta
 
 import sys
 import os
@@ -37,18 +40,21 @@ def set_up_log(log_dir, log_filename):
     return logger
 
 def download_forecast():
-    now = dt.now()
+    # since bolge server is in UTC I need to localize the time to Oslo CEST +2/3
+    oslo_time = pytz.timezone("Europe/Oslo")
+    now = oslo_time.localize(dt.now())
     formatted_date = now.strftime('%d_%m_%Y')
     hour_suffix  = '00'
     if now.hour // 12 == 1:
         hour_suffix  = '12'
-    file_name = f"MyWave_wam800_c4WAVE{hour_suffix}_{formatted_date}"
-    dowload_location = (os.path.join("./forecast_files", file_name))
+    file_name = f"MyWave_wam800_c4WAVE{hour_suffix}_{formatted_date}.nc"
+    download_directory = "forecast_files"
+    download_location = (os.path.join(os.getcwd(), download_directory, file_name))
     url  = f"https://thredds.met.no/thredds/fileServer/fou-hi/mywavewam800s/MyWave_wam800_c4WAVE{hour_suffix}.nc"
     response = requests.get(url)
     if response.status_code == 200:
         LOGGER.info(f"Status code ok: {response.status_code}")
-        with open(dowload_location, 'wb') as file:
+        with open(download_location, 'wb') as file:
             file.write(response.content)
         LOGGER.info(f"Downloaded: {file_name}")
     else:
