@@ -43,14 +43,14 @@ def download_forecast():
     if now.hour // 12 == 1:
         hour_suffix  = '12'
     file_name = f"MyWave_wam800_c4WAVE{hour_suffix}_{formatted_date}"
+    dowload_location = (os.path.join("./forecast_files", file_name))
     url  = f"https://thredds.met.no/thredds/fileServer/fou-hi/mywavewam800s/MyWave_wam800_c4WAVE{hour_suffix}.nc"
     response = requests.get(url)
     if response.status_code == 200:
         LOGGER.info(f"Status code ok: {response.status_code}")
-        with open(file_name, 'wb') as file:
+        with open(dowload_location, 'wb') as file:
             file.write(response.content)
         LOGGER.info(f"Downloaded: {file_name}")
-        
     else:
         LOGGER.error(f"Not ok status code: {response.status_code}")
     
@@ -59,10 +59,7 @@ LOGNAME = get_script_name() + '.log'
 LOG_DIR = 'logs'
 LOGGER = set_up_log(LOG_DIR, LOGNAME)
 
-
-
 if __name__ == "__main__":
     LOGGER.info("start script")
-
     download_forecast()
     LOGGER.info("end script")
