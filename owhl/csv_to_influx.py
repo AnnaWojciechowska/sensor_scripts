@@ -59,7 +59,7 @@ def set_up_log(log_dir, log_filename):
     #check if log dir exist, create both log dir and log file if necessary
     if not os.path.isdir(os.path.join(script_run_dir, log_dir)):
         os.mkdir(os.path.join(script_run_dir, log_dir))
-    file_handler = logging.FileHandler(os.path.join(script_run_dir, log_dir, log_filename), mode='w')
+    file_handler = logging.FileHandler(os.path.join(script_run_dir, log_dir, log_filename), mode='a')
     file_handler.setFormatter(logging.Formatter(fmt='%(asctime)s [%(pathname)s:%(lineno)d] [%(levelname)s] %(message)s', datefmt='%a, %d %b %Y %H:%M:%S'))
     logger = logging.getLogger()
     logger.addHandler(file_handler)
@@ -168,10 +168,10 @@ def process_csv_and_store(file_path, write_run):
         sensor_meta_data = get_metadata(file_path)
         if sensor_meta_data == None:
             # return False, since not written, and 0 datapoints
-            return (False ,0)
+            return (False ,0, None)
         if sensor_meta_data[0] == 'Default':
             LOGGER.info(f"{file_path} contains default meta data. File skippped.")
-            return(False,0)
+            return(False,0, None)
         df = pd.read_csv(file_path, skiprows=1) 
         if df.shape[0] > 0:
             df['sensor_position'] = sensor_meta_data[0]
@@ -187,16 +187,17 @@ def process_csv_and_store(file_path, write_run):
             df = df.drop(columns=['dt_string', 'frac_string', 'POSIXt', 'DateTime', 'frac.seconds' ])
             df = df.rename(columns={"Pressure.mbar": "pressure_mbar", "TempC": "temp_c"})
             if write_run:
-                return slice_data_and_store(df)
+                write_result = slice_data_and_store(df)
+                return(True, write_result, sensor_meta_data)
         else: 
             os.remove(file_path)
             LOGGER.info(f"{file_path} contains empty data frame. File removed")
             # no datapoints
-            return (False,0)
+            return (False,0, None)
     else: 
         os.remove(file_path)
         LOGGER.info(f"{file_path} is empty. File removed")
-        return (False,0)
+        return (False,0, None)
 
 
            
@@ -214,17 +215,19 @@ def process_data(write_run):
 
     os.chdir(DATA_DIR)
     files = glob.glob("*.csv")
-    for f in files:
+    for filename in files:
         start_processing = dt.now()
-        LOGGER.info(f"Trying to process: {f}")
-        full_file_path = os.path.join(SCRIPT_DIR, DATA_DIR, f)
-        write_res = process_csv_and_store(full_file_path, write_run)
-        if (write_run and write_res[0]):
-            dest_file_path = os.path.join(SCRIPT_DIR, PROCESSED_DIR, f)
+        #LOGGER.info(f"Trying to process: {filename}")
+        full_file_path = os.path.join(SCRIPT_DIR, DATA_DIR, filename)
+        write_result, store_result, meta_data = process_csv_and_store(full_file_path, write_run)
+        if (write_run and write_result):
+            filename_with_model  = filename.split(".csv")[0]
+            filename_with_model = filename_with_model +'_' +  meta_data[0] + '_' + meta_data[1] + '.csv'
+            dest_file_path = os.path.join(SCRIPT_DIR, PROCESSED_DIR, filename_with_model)
             os.rename(full_file_path, dest_file_path)
             end_processing = dt.now()
-            LOGGER.info(f"{f} processed")
-            LOGGER.info(f"processed {write_res[1]} datapoints in: { end_processing - start_processing} [ms]")
+            LOGGER.info(f"{filename} processed and renamed {filename_with_model}")
+            LOGGER.info(f"processed {store_result[1]} datapoints in: { end_processing - start_processing} [ms]")
     LOGGER.info(f"total processed {len(files)} files")
 
 
