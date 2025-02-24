@@ -161,7 +161,7 @@ def slice_data_and_store(df):
 
 
 
-def proces_csv_and_store(file_path, write_run): 
+def process_csv_and_store(file_path, write_run): 
     ''' reads from csv at file_path and stores to influx '''
     ''' returns true if writen, together with datapoints count'''
     if os.stat(file_path).st_size > 0:
@@ -191,7 +191,8 @@ def proces_csv_and_store(file_path, write_run):
             # no datapoints
             return (False,0)
     else: 
-        #file is 0 size:
+        os.remove(file_path)
+        LOGGER.info(f"{file_path} is empty. File removed")
         return (False,0)
 
 
@@ -214,7 +215,7 @@ def process_data(write_run):
         start_processing = dt.now()
         LOGGER.info(f"Trying to process: {f}")
         full_file_path = os.path.join(SCRIPT_DIR, DATA_DIR, f)
-        write_res = proces_csv_and_store(full_file_path, write_run)
+        write_res = process_csv_and_store(full_file_path, write_run)
         if (write_run and write_res[0]):
             dest_file_path = os.path.join(SCRIPT_DIR, PROCESSED_DIR, f)
             os.rename(full_file_path, dest_file_path)
