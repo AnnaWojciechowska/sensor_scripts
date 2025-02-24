@@ -169,6 +169,9 @@ def process_csv_and_store(file_path, write_run):
         if sensor_meta_data == None:
             # return False, since not written, and 0 datapoints
             return (False ,0)
+        if sensor_meta_data[0] == 'Default':
+            LOGGER.info(f"{file_path} contains default meta data. File skippped.")
+            return(False,0)
         df = pd.read_csv(file_path, skiprows=1) 
         if df.shape[0] > 0:
             df['sensor_position'] = sensor_meta_data[0]
