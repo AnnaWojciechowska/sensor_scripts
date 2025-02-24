@@ -82,6 +82,8 @@ def read_settings_line(settings_line):
     position = res[0]
     model = res[1]
     utc_shift = res[2].split(',')[0]
+    print("position ", position)
+    print("model ", model)
     return position, model, utc_shift
 
 def get_metadata(file_path):
@@ -96,6 +98,7 @@ def get_metadata(file_path):
         LOGGER.errof(f"An io error occurred trying to read the file {file_path}.")
 
 def get_utc_time_offset(utc_string):
+    print(utc_string)
     #reading utf time offset information
     # tested against utc_string = ["UTC+0", "UTC-1", "UTC+2" , "utc-0"]
     offset_list = utc_string.lower().split('utc')
@@ -108,7 +111,7 @@ def get_utc_time_offset(utc_string):
 
 def store_points(df):
     try:
-        result = INFLUX_WRITE_CLIENT.write_points(df,'pressure',tag_columns = ['sensor_model', 'sensor_position'], field_columns = ['pressure_mbar', 'temp_c', 'utc_offset'],protocol='line')
+        result = INFLUX_WRITE_CLIENT.write_points(df,'sensor_test',tag_columns = ['sensor_model', 'sensor_position'], field_columns = ['pressure_mbar', 'temp_c', 'utc_offset'],protocol='line')
         if result:
             LOGGER.info(f" {df.shape[0]} data points written.")
             return (result,df.shape[0])
@@ -177,12 +180,14 @@ def proces_csv_and_store(file_path, write_run):
             df['time'] = pd.to_datetime( df['dt_string'] + '.' + df['frac_string'])
             df['utc_offset'] = utc_time_offset
             #inflxdb default time zone is UTC, thus all data will be stored in UTC+0
-            df['time'] = df['time'] - utc_offset_time_delta
+            #df['time'] = df['time'] - utc_offset_time_delta
             df = df.drop(columns=['dt_string', 'frac_string', 'POSIXt', 'DateTime', 'frac.seconds' ])
             df = df.rename(columns={"Pressure.mbar": "pressure_mbar", "TempC": "temp_c"})
             if write_run:
                 return slice_data_and_store(df)
         else: 
+            os.remove(file_path)
+            LOGGER.info(f"{file_path} contains empty data frame. File removed")
             # no datapoints
             return (False,0)
     else: 
@@ -226,10 +231,11 @@ LOGGER = set_up_log(LOG_DIR, LOGNAME)
 
 LOGGER.info("start script")
 
-if not os.path.exists(os.path.join(os.getcwd(), 'influxdb_credentials')):
+credentials_path = '../database_settings/influxdb_credentials'
+if not os.path.exists(os.path.join(os.getcwd(), credentials_path)):
     LOGGER.error("influxdb_credentials file is missing")
     sys.exit(1)
-influx_auth = json.load(open(os.path.join(os.getcwd(), 'influxdb_credentials')))
+influx_auth = json.load(open(os.path.join(os.getcwd(), credentials_path)))
 
 INFLUX_WRITE_CLIENT = DataFrameClient(
     host = 'localhost',
