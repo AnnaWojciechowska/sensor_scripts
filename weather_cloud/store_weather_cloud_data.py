@@ -131,10 +131,11 @@ LOGGER = set_up_log(LOG_DIR, LOGNAME)
 
 LOGGER.info("start script")
 
-if not os.path.exists(os.path.join(os.getcwd(), 'influxdb_credentials')):
+credentials_path = '../database_settings/influxdb_credentials'
+if not os.path.exists(os.path.join(os.getcwd(), credentials_path)):
     LOGGER.error("influxdb_credentials file is missing")
     sys.exit(1)
-influx_auth = json.load(open(os.path.join(os.getcwd(), 'influxdb_credentials')))
+influx_auth = json.load(open(os.path.join(os.getcwd(), credentials_path)))
 
 INFLUX_WRITE_CLIENT = DataFrameClient(
     host = 'localhost',
