@@ -78,16 +78,15 @@ def get_script_name():
     return res[0]
 
 def proces_csv_and_store(full_file_path, write_run):
-    df = pd.read_csv(full_file_path, sep='\t')
-    columns_to_drop = ['Heat index (°C)', 'Gust of wind (m/s)', 'Average wind direction (°)']
+    df = pd.read_csv(full_file_path, encoding="utf-16le", sep=";", index_col=0)
+    # I need to shift columns names to the left because column"Date (Europe/Oslo)" is already in index
+    df.columns =df.columns.to_list()[1:] + ['Unnamed']
+    columns_to_drop = ['Heat index (°C)', 'Gust of wind (m/s)', 'Average wind direction (°)', 'Unnamed: 14', 'Unnamed']
     df.drop(columns=columns_to_drop, inplace=True)
-    new_columns = ['Date (Europe/Oslo)', 'temp_c', 'wind_chill_c', 'dew_point_c', 'humidity_percent', 'average_wind_speed_m_s', 'atm_pressure_hpa', 'uv_index', 'alt_m', 'lat', 'lon']
+    new_columns = ['temp_c', 'wind_chill_c', 'dew_point_c', 'humidity_percent', 'average_wind_speed_m_s', 'atm_pressure_hpa', 'uv_index', 'alt_m', 'lat', 'lon']
     df.columns = new_columns
-    df = df.dropna(subset=['atm_pressure_hpa']).copy()
-    df['time'] = pd.to_datetime(df['Date (Europe/Oslo)']).dt.tz_localize('Europe/Oslo')
-    df['time'] = df['time'].dt.tz_convert('UTC')
-    df.drop(columns=['Date (Europe/Oslo)'], inplace=True)
-    df.set_index('time', inplace=True)
+    df = df.dropna(how='all')
+    df.index = pd.to_datetime(df.index).tz_localize('Europe/Oslo').tz_convert('UTC')
     fields = df.columns.to_list()
     df['sensor_type'] = 'skywatch_bl_500'
     df['position'] = 'Hospitveien 12b'
@@ -103,7 +102,7 @@ def process_data(write_run):
         LOGGER.error(f"{os.path.join(SCRIPT_DIR, DATA_DIR)} data folder is missng, aborting.")
         sys.exit(1)
 
-    PROCESSED_DIR = 'sensor_processed'
+    PROCESSED_DIR = 'weather_cloud_processed'
     if not os.path.exists(os.path.join(SCRIPT_DIR,  PROCESSED_DIR)):
         os.mkdir(os.path.join(SCRIPT_DIR,  PROCESSED_DIR))
 
