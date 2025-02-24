@@ -59,6 +59,18 @@ def download_forecast():
         LOGGER.info(f"Downloaded: {file_name}")
     else:
         LOGGER.error(f"Not ok status code: {response.status_code}")
+    file_name = f"MyWave_wam800_c4SPC{hour_suffix}_{formatted_date}.nc"
+    download_directory = "forecast_files"
+    download_location = (os.path.join(os.getcwd(), download_directory, file_name))
+    url  = f"https://thredds.met.no/thredds/fileServer/fou-hi/mywavewam800s/MyWave_wam800_c4SPC{hour_suffix}.nc"
+    response = requests.get(url)
+    if response.status_code == 200:
+        LOGGER.info(f"Status code ok: {response.status_code}")
+        with open(download_location, 'wb') as file:
+            file.write(response.content)
+        LOGGER.info(f"Downloaded: {file_name}")
+    else:
+        LOGGER.error(f"Not ok status code: {response.status_code}")
     
 START_SCRIPT_TIME = dt.now()
 LOGNAME = get_script_name() + '.log'
